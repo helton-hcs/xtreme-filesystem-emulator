@@ -1,12 +1,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <getopt.h>
+#include "utils.h"
+#include "nodes.h"
 
-#define MAX_BUFFER_SIZE 1 << 7
-#define TRUE 1
+void printPrompt();
+void printHeaderXFSE(char *);
+void printHelp();
+void readCommand(char *);
+void readInput();
+void releaseResources();
+void printWelcome();
 
-struct directoryNode {
-	char *name;
-	struct directoryNode *next;
-}*rootNode, *currentDirectory;
-
+void initRootNode();

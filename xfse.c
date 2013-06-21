@@ -1,27 +1,22 @@
 #include "xfse.h"
 
-struct directoryNode *newDirectoryNode(char *path) {
-	return NULL;
+int main(int argc, char **argv) {
+	printWelcome();
+	initRootNode();
+	readInput();
+	releaseResources();
+	return EXIT_SUCCESS;
 }
 
 void initRootNode() {
-	rootNode = malloc(sizeof(struct directoryNode));
-	rootNode->name = malloc(sizeof(char));
-	strcpy(rootNode->name, "/");
-	currentDirectory = rootNode;
+	root = malloc(sizeof(struct directoryNode));
+	root->name = malloc(sizeof(char));
+	strcpy(root->name, "/");
+	cwd = root;
 }
 
 void printPrompt() {
-	printf("[xfse]%s>> ", currentDirectory->name);
-}
-
-char *getString(char *buffer, int length) {
-	char *p;
-	fgets(buffer, length, stdin);
-	if ((p = strchr(buffer, '\n')) != NULL) {
-		*p = '\0';
-	}
-	return buffer;
+	printf("[xfse]%s>> ", cwd->name);
 }
 
 void printHeaderXFSE(char *message) {
@@ -100,17 +95,10 @@ void readInput() {
 }
 
 void releaseResources() {
-	free(rootNode);
+	free(root->name);
+	free(root);
 }
 
 void printWelcome() {
 	printHeaderXFSE("Tip: Type \"help\" if you need any help");
-}
-
-int main(int argc, char **argv) {
-	printWelcome();
-	initRootNode();
-	readInput();
-	releaseResources();
-	return EXIT_SUCCESS;
 }
