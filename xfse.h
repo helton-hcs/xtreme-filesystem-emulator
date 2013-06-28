@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
+#include "types.h"
 #include "utils.h"
-#include "nodes.h"
 
 void printPrompt();
 void printHeaderXFSE(char *);
@@ -14,3 +14,5 @@ void releaseResources();
 void printWelcome();
 
 void initRootNode();
+
+int sectorsMap[SECTOR_COUNT];
