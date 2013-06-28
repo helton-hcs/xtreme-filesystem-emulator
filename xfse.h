@@ -7,7 +7,7 @@
 
 void printPrompt();
 void printHeaderXFSE(char *);
-void printHelp();
+void help();
 void readCommand(char *);
 void readInput();
 void releaseResources();

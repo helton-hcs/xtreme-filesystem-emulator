@@ -19,7 +19,7 @@ void initDiskSectors() {
 	allocateSystemSectors();
 }
 
-void printSectors() {
+void showmap() {
 	int i;
 	printf("\n# Sectors map:\n"
 			"░ = Empty sector\n"
@@ -41,13 +41,10 @@ void printHeaderXFSE(char *message) {
 		   " > %s\n\n", message);
 }
 
-void printHelp() {
+void help() {
 	printHeaderXFSE("XFSE Help");
 	printf(
 		   "---------------------------------------------------------------\n"
-//	       " # cd\t\t\t\tchange the working directory\n"
-//	       "   Usage: cd DIRECTORY\n"
-//		   "---------------------------------------------------------------\n"
 	       " # clear\t\t\tclear screen\n"
 	       "   Usage: clear\n"
 		   "---------------------------------------------------------------\n"
@@ -57,10 +54,9 @@ void printHelp() {
 	       " # help\t\t\t\tthis help screen\n"
 	       "   Usage: help\n"	 		   
 		   "---------------------------------------------------------------\n"
-//		   " # ls\t\t\t\tlist the directory files\n"
-//		   "   Usage: ls [OPTIONS]\n"
-//		   "     -a, --all\t\t\tall info detailed\n"
-//		   "---------------------------------------------------------------\n"
+		   " # ls\t\t\t\tlist the directory "
+		   "   Usage: ls \n"
+		   "---------------------------------------------------------------\n"
 	       " # mkdir\t\t\tcreate a directory\n"
 	       "   Usage: mkdir DIRECTORY\n"	       
 		   "---------------------------------------------------------------\n"
@@ -81,10 +77,34 @@ void printHelp() {
 	       "   Usage: rmf FILE\n"	       
 		   "---------------------------------------------------------------\n"
 	       " # tree\t\t\t\tshow a directory tree\n"
-//	       "   Usage: tree [OPTIONS] \n"
-//	       "     -d, -directory\t\tfirst directory of the tree\n"
+	       "   Usage: tree\n"
 		   "---------------------------------------------------------------\n"
 	      );
+}
+
+char *getParentPath(char *path) {
+	char *parentPath = copyString(path);
+	int i;
+	for (i = strlen(parentPath) - 1; i >= 0; i--) {
+		if (parentPath[i] == '/') {
+			parentPath[i] = 0;
+			return parentPath;
+		}
+	}
+	return NULL;
+}
+
+char *getLastNameFromPath(char *path) {
+	char *parentPath = copyString(path);
+	int i;
+	for (i = strlen(parentPath) - 1; i >= 0; i--) {
+		if (parentPath[i] == '/') {
+			parentPath[i] = 0;
+			parentPath = &parentPath[i+1];
+			return parentPath;
+		}
+	}
+	return NULL;
 }
 
 struct directoryNode *findSubDirectory(struct directoryNode *parentDirectory, char *name) {
@@ -115,6 +135,22 @@ struct directoryNode *findDirectoryByPath(char *path) {
 	return NULL;
 }
 
+struct fileNode *findFileByPath(char *path) {
+	if (path) {
+		char *fileName = getLastNameFromPath(path);
+		char *parentPath = getParentPath(path);
+		struct directoryNode *parentDirectory = findDirectoryByPath(parentPath);
+		struct fileNode *file = parentDirectory->firstFile;
+		while(file) {
+			if (!strcmp(file->name, fileName)) {
+				return file;
+			}
+			file = file->nextFile;
+		}
+	}
+	return NULL;
+}
+
 struct tm *getLocalTime() {
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
@@ -131,7 +167,7 @@ struct directoryNode *newDirectoryNode() {
 	struct directoryNode *dir = malloc(sizeof(struct directoryNode));
 	dir->parentDirectory = dir->priorDirectory = dir->nextDirectory = dir->firstSubdirectory = dir->lastSubdirectory = NULL;
 	dir->firstFile = dir->lastFile = NULL;
-	dir->level = dir->size  = 0;
+	dir->level = dir->size = dir->fileCount = 0;
 	dir->creationTime = getLocalTime();
 	dir->modificationTime = getLocalTime();
 	return dir;
@@ -175,6 +211,76 @@ void removeDirectory(struct directoryNode *directory) {
 	free(directory);
 }
 
+struct fileNode *newFileNode() {
+	struct fileNode *file = malloc(sizeof(struct fileNode));
+	file->size = 0;
+	file->creationTime = getLocalTime();
+	file->modificationTime = getLocalTime();
+	return file;
+}
+
+struct fileNode *createFile(struct directoryNode *directory, char *fileName, int fileSize) {
+	struct fileNode *file = newFileNode();
+	file->size = fileSize;
+	file->name = copyString(fileName);
+	if (directory->lastFile) {
+		file->priorFile = directory->lastFile;
+		directory->lastFile->nextFile = file;
+	}
+	directory->lastFile = file;
+	if (!directory->firstFile) {
+		directory->firstFile = file;
+	}
+	directory->size += fileSize;
+	directory->fileCount++;
+	directory->modificationTime = getLocalTime();
+	//allocSpaceToFile(file);
+	return file;
+}
+
+void removeFile(struct fileNode *file) {
+	if ((file == file->directory->firstFile) &&
+  	    (file == file->directory->lastFile)) {
+		file->directory->firstFile = file->directory->lastFile = NULL;
+	}
+	else if ((file != file->directory->firstFile) &&
+			 (file != file->directory->lastFile)) {
+		file->priorFile->nextFile = file->nextFile;
+	}
+	else if (file == file->directory->firstFile) {
+		file->directory->firstFile = file->nextFile;
+		file->directory->firstFile->priorFile = NULL;
+	}
+	else if (file == file->directory->lastFile) {
+		file->directory->lastFile = file->priorFile;
+		file->priorFile->nextFile = NULL;
+	}
+	free(file);
+}
+
+void printDirectory(struct directoryNode *dir) {
+	struct directoryNode *currentDir = dir->firstSubdirectory;
+	struct fileNode *currentFile = dir->firstFile;
+	int dirCount, fileCountDir, fileCountSubDir;
+	dirCount = fileCountDir = fileCountSubDir = 0;
+	while (currentDir) {
+		dirCount++;
+		fileCountSubDir += currentDir->fileCount;
+		printf("%6d\t%s\t%s\t"KBLUE"%s"KNORMAL"\n", currentDir->size, getFormatedLocalTime(currentDir->creationTime),
+				getFormatedLocalTime(currentDir->modificationTime), currentDir->name);
+		currentDir = currentDir->nextDirectory;
+
+	}
+	while (currentFile) {
+		fileCountDir++;
+		printf("%6d\t%s\t%s\t%s\n", currentFile->size, getFormatedLocalTime(currentFile->creationTime),
+				getFormatedLocalTime(currentFile->modificationTime), currentFile->name);
+		currentFile = currentFile->nextFile;
+	}
+	printf("\n%d subdirectorie(s), %d file(s) [%d in the directory, %d in the subdirectories]"
+		   "\n%d bytes used\n", dirCount, fileCountDir+fileCountSubDir, fileCountDir, fileCountSubDir, dir->size);
+}
+
 void createRootDirectory() {
 	root = createDirectory(NULL, "/");
 	cwd = root;
@@ -187,36 +293,49 @@ char *extractSingleArgumentFrom(char *command) {
 	return arg;
 }
 
-char *getParentPath(char *path) {
-	char *parentPath = copyString(path);
-	int i;
-	for (i = strlen(parentPath) - 1; i >= 0; i--) {
-		if (parentPath[i] == '/') {
-			parentPath[i] = 0;
-			return parentPath;
-		}
-	}
-	return NULL;
+int isDirectoryEmpty(struct directoryNode *directory) {
+	return (!directory->firstSubdirectory && !directory->firstFile);
 }
 
-char *getDirectoryName(char *path) {
-	char *parentPath = copyString(path);
-	int i;
-	for (i = strlen(parentPath) - 1; i >= 0; i--) {
-		if (parentPath[i] == '/') {
-			parentPath[i] = 0;
-			parentPath = &parentPath[i+1];
-			return parentPath;
+void mkf(char *command) {
+	char *path = extractSingleArgumentFrom(command);
+	char *fileName = getLastNameFromPath(path);
+	char *parentPath = getParentPath(path);
+	struct directoryNode *parentDirectory = findDirectoryByPath(parentPath);
+	if (!parentDirectory) {
+		printf("Parent directory \"%s\" not found.\n", parentPath);
+	}
+	else {
+		if (fileName) {
+			int fileSize;
+			printf("=> Type the file size: ");
+			scanf("%d", &fileSize);
+			setbuf(stdin, NULL);
+			//check available space
+			createFile(parentDirectory, fileName, fileSize);
+		}
+		else {
+			printf("File name not found.\n");
 		}
 	}
-	return NULL;
+}
+
+void rmf(char *command) {
+	char *path = extractSingleArgumentFrom(command);
+	struct fileNode *file = findFileByPath(path);
+	if (file) {
+		removeFile(file);
+	}
+	else {
+		printf("The file \"%s\" was not found.\n", path);
+	}
 }
 
 void mkdir(char *command) {
 	char *path = extractSingleArgumentFrom(command);
 	if (!findDirectoryByPath(path)) {
 		char *parentPath = getParentPath(path);
-		char *directoryName = getDirectoryName(path);
+		char *directoryName = getLastNameFromPath(path);
 		struct directoryNode *parentDirectory = findDirectoryByPath(parentPath);
 		if (!parentDirectory) {
 			printf("Parent directory \"%s\" not found.\n", parentPath);
@@ -228,10 +347,6 @@ void mkdir(char *command) {
 	else {
 		printf("The directory \"%s\" already exists.\n", path);
 	}
-}
-
-int isDirectoryEmpty(struct directoryNode *directory) {
-	return (!directory->firstSubdirectory && !directory->firstFile);
 }
 
 void rmdir(char *command) {
@@ -247,6 +362,17 @@ void rmdir(char *command) {
 		else {
 			removeDirectory(directory);
 		}
+	}
+	else {
+		printf("The directory \"%s\" not exists.\n", path);
+	}
+}
+
+void ls(char *command) {
+	char *path = extractSingleArgumentFrom(command);
+	struct directoryNode *directory = findDirectoryByPath(path);
+	if (directory) {
+		printDirectory(directory);
 	}
 	else {
 		printf("The directory \"%s\" not exists.\n", path);
@@ -269,7 +395,7 @@ void printDirectoriesRecursivelyFrom(struct directoryNode *currentDirectory) {
 	}
 }
 
-void printDirectoryTree() {
+void tree() {
 	printf("\n# Directory tree:");
 	printDirectoriesRecursivelyFrom(root);
 	printf("\n");
@@ -295,16 +421,25 @@ void readCommand(char *command){
 			rmdir(command);
 		}
 		else if (isCommand(command, "help")) {
-			printHelp();
+			help();
 		}
 		else if (isCommand(command, "tree")) {
-			printDirectoryTree();
+			tree();
 		}
 		else if (isCommand(command, "showmap")) {
-			printSectors();
+			showmap();
 		}
 		else if (isCommand(command, "clear")) {
 			system("clear");
+		}
+		else if (isCommand(command, "ls")) {
+			ls(command);
+		}
+		else if (isCommand(command, "mkf")) {
+			mkf(command);
+		}
+		else if (isCommand(command, "rmf")) {
+			rmf(command);
 		}
 		else {
 			printf("Unrecognized command. Type \"help\" if you don't know the emulator commands.\n");
