@@ -3,7 +3,7 @@ CFLAGS = -Wall
 LDFLAGS = 
 
 xfse : utils.o xfse.o
-	${CC} ${CFLAGS} $^ ${LDFLAGS} -o $@
+	${CC} ${CFLAGS} $^ ${LDFLAGS} -o $@ -lm
 
 xfse.o : xfse.c xfse.h
 	${CC} ${CFLAGS} -c $^

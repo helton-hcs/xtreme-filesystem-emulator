@@ -18,6 +18,7 @@ struct fileNode {
 	struct tm *creationTime, *modificationTime;
 	struct directoryNode *directory;
 	struct fileNode *priorFile, *nextFile;
+	struct diskSector *sector;
 };
 
 struct directoryNode {
@@ -27,8 +28,13 @@ struct directoryNode {
 	int level, size;
 	struct tm *creationTime, *modificationTime;
 	int fileCount;
-}*root, *cwd;
+	struct diskSector *sector;
+}*root;
 
 struct diskSector {
-	int sectorStatus;
+	int status; //EMPTY or FULL
+	union {
+		struct fileNode *file;
+		struct directoryNode *dir;
+	};
 }sectors[SECTOR_COUNT];

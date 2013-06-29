@@ -3,15 +3,27 @@
 void emptySectors() {
 	int i;
 	for (i = 0; i < SECTOR_COUNT; i++) {
-		sectorsMap[i] = EMPTY;
+		sectors[i].dir = NULL;
+		sectors[i].status = EMPTY;
 	}
 }
 
 void allocateSystemSectors() {
 	int i;
 	for (i = 0; i < SYSTEM_SECTORS_COUNT; i++) {
-		sectorsMap[i] = FULL;
+		sectors[i].status = FULL;
 	}
+}
+
+int getAvailableSpace() {
+	int i, sectorsAvailable;
+	sectorsAvailable = 0;
+	for (i = 0; i < SECTOR_COUNT; i++) {
+		if (sectors[i].status == EMPTY) {
+			sectorsAvailable++;
+		}
+	}
+	return sectorsAvailable * SECTOR_SIZE;
 }
 
 void initDiskSectors() {
@@ -19,19 +31,52 @@ void initDiskSectors() {
 	allocateSystemSectors();
 }
 
-void showmap() {
+struct diskSector *getNextSectorAvailable() {
 	int i;
-	printf("\n# Sectors map:\n"
-			"░ = Empty sector\n"
-			"▓ = Full sector\n\n");
 	for (i = 0; i < SECTOR_COUNT; i++) {
-		printf("%s", sectorsMap[i] == FULL ? "▓" : "░");
+		if (sectors[i].status == EMPTY) {
+			sectors[i].status = FULL;
+			return &sectors[i];
+		}
 	}
-	printf("\n");
+	fprintf(stderr, "Full disk!");
+	exit(EXIT_FAILURE);
+}
+
+void freeSectorsAllocatedForFile(struct fileNode *file) {
+	int i;
+	for (i = 0; i < SECTOR_COUNT; i++) {
+		if (sectors[i].file == file) {
+			sectors[i].file = NULL;
+			sectors[i].status = EMPTY;
+		}
+	}
+}
+
+char *extractSingleArgumentFrom(char *command) {
+	char *arg = command;
+	arg = strtok(arg,  " \t");
+	arg = strtok(NULL, " \t");
+	return arg;
+}
+
+struct diskSector *allocateSectorsToFile(struct fileNode *file) {
+	int i, diskAllocatedCount;
+	diskAllocatedCount = (int)file->size/SECTOR_SIZE;
+	if (file->size % SECTOR_SIZE > 0) {
+		diskAllocatedCount++;
+	}
+	printf("Allocated %d sectors to file with size %d bytes.\n", diskAllocatedCount, file->size);
+	struct diskSector *sector;
+	for (i = 0; i < diskAllocatedCount; i++) {
+		sector = getNextSectorAvailable();
+		sector->file = file;
+	}
+	return sector;
 }
 
 void printPrompt() {
-	printf("[xfse]%s>> ", cwd->name);
+	printf("[xfse]>> ");
 }
 
 void printHeaderXFSE(char *message) {
@@ -43,7 +88,9 @@ void printHeaderXFSE(char *message) {
 
 void help() {
 	printHeaderXFSE("XFSE Help");
-	printf(
+	printf("---------------------------------------------------------------\n"
+		   " # availableSpace\t\tshow a sectors' map used\n"
+		   "   Usage: availableSpace\n"
 		   "---------------------------------------------------------------\n"
 	       " # clear\t\t\tclear screen\n"
 	       "   Usage: clear\n"
@@ -64,9 +111,6 @@ void help() {
 	       "   Usage: mkf FILE [OPTIONS] \n"
 	       "    -s, --size\t\t\tsize of file\n"		
 		   "---------------------------------------------------------------\n"
-	       " # showmap\t\t\t\tshow a sectors' map used\n"
-	       "   Usage: mmap\n"      	       
-		   "---------------------------------------------------------------\n"
 	       " # quit\t\t\t\tterminate the XFSE program\n"
 	       "   Usage: quit\n"	       
 		   "---------------------------------------------------------------\n"
@@ -75,6 +119,12 @@ void help() {
 		   "---------------------------------------------------------------\n"
 	       " # rmf\t\t\t\tremove a file\n"
 	       "   Usage: rmf FILE\n"	       
+		   "---------------------------------------------------------------\n"
+		   " # showSectors\t\t\tshow a sectors' map used\n"
+		   "   Usage: showSectors\n"
+		   "---------------------------------------------------------------\n"
+		   " # showFileSectors\t\tshow a sectors' map used\n"
+		   "   Usage: showFileSectors\n"
 		   "---------------------------------------------------------------\n"
 	       " # tree\t\t\t\tshow a directory tree\n"
 	       "   Usage: tree\n"
@@ -188,6 +238,8 @@ struct directoryNode *createDirectory(struct directoryNode *parentDirectory, cha
 			parentDirectory->firstSubdirectory = dir;
 		}
 	}
+	dir->sector = getNextSectorAvailable();
+	dir->sector->dir = dir;
 	return dir;
 }
 
@@ -223,6 +275,8 @@ struct fileNode *createFile(struct directoryNode *directory, char *fileName, int
 	struct fileNode *file = newFileNode();
 	file->size = fileSize;
 	file->name = copyString(fileName);
+	file->directory = directory;
+	file->sector = allocateSectorsToFile(file);
 	if (directory->lastFile) {
 		file->priorFile = directory->lastFile;
 		directory->lastFile->nextFile = file;
@@ -234,7 +288,6 @@ struct fileNode *createFile(struct directoryNode *directory, char *fileName, int
 	directory->size += fileSize;
 	directory->fileCount++;
 	directory->modificationTime = getLocalTime();
-	//allocSpaceToFile(file);
 	return file;
 }
 
@@ -261,8 +314,8 @@ void removeFile(struct fileNode *file) {
 void printDirectory(struct directoryNode *dir) {
 	struct directoryNode *currentDir = dir->firstSubdirectory;
 	struct fileNode *currentFile = dir->firstFile;
-	int dirCount, fileCountDir, fileCountSubDir;
-	dirCount = fileCountDir = fileCountSubDir = 0;
+	int dirCount, fileCountDir, fileCountSubDir, filesSize;
+	dirCount = fileCountDir = filesSize = fileCountSubDir = 0;
 	while (currentDir) {
 		dirCount++;
 		fileCountSubDir += currentDir->fileCount;
@@ -273,24 +326,17 @@ void printDirectory(struct directoryNode *dir) {
 	}
 	while (currentFile) {
 		fileCountDir++;
+		filesSize += currentFile->size;
 		printf("%6d\t%s\t%s\t%s\n", currentFile->size, getFormatedLocalTime(currentFile->creationTime),
 				getFormatedLocalTime(currentFile->modificationTime), currentFile->name);
 		currentFile = currentFile->nextFile;
 	}
-	printf("\n%d subdirectorie(s), %d file(s) [%d in the directory, %d in the subdirectories]"
-		   "\n%d bytes used\n", dirCount, fileCountDir+fileCountSubDir, fileCountDir, fileCountSubDir, dir->size);
+	printf("\n%d subdirectories, %d file(s) [%d in the directory, %d in the subdirectories]"
+			"\n%d bytes used for files, %d bytes available in disk\n", dirCount, fileCountDir+fileCountSubDir, fileCountDir, fileCountSubDir, filesSize, getAvailableSpace() - dir->size);
 }
 
 void createRootDirectory() {
 	root = createDirectory(NULL, "/");
-	cwd = root;
-}
-
-char *extractSingleArgumentFrom(char *command) {
-	char *arg = command;
-	arg = strtok(arg,  " \t");
-	arg = strtok(NULL, " \t");
-	return arg;
 }
 
 int isDirectoryEmpty(struct directoryNode *directory) {
@@ -301,51 +347,57 @@ void mkf(char *command) {
 	char *path = extractSingleArgumentFrom(command);
 	char *fileName = getLastNameFromPath(path);
 	char *parentPath = getParentPath(path);
-	struct directoryNode *parentDirectory = findDirectoryByPath(parentPath);
-	if (!parentDirectory) {
-		printf("Parent directory \"%s\" not found.\n", parentPath);
-	}
-	else {
-		if (fileName) {
-			int fileSize;
-			printf("=> Type the file size: ");
-			scanf("%d", &fileSize);
-			setbuf(stdin, NULL);
-			//check available space
-			createFile(parentDirectory, fileName, fileSize);
+	struct fileNode *file = findFileByPath(path);
+	if (!file) {
+		struct directoryNode *parentDirectory = findDirectoryByPath(parentPath);
+		if (!parentDirectory) {
+			fprintf(stderr, "Parent directory \"%s\" not found.\n", parentPath);
 		}
 		else {
-			printf("File name not found.\n");
+			if (fileName) {
+				int fileSize;
+				printf("=> Type the file size: ");
+				scanf("%d", &fileSize);
+				setbuf(stdin, NULL);
+				createFile(parentDirectory, fileName, fileSize);
+			}
+			else {
+				fprintf(stderr, "File name not found.\n");
+			}
 		}
+	}
+	else {
+		fprintf(stderr, "File in \"%s\" already exists.\n", path);
 	}
 }
 
 void rmf(char *command) {
-	char *path = extractSingleArgumentFrom(command);
+	char *path = extractSingleArgumentFrom(copyString(command));
 	struct fileNode *file = findFileByPath(path);
 	if (file) {
 		removeFile(file);
+		freeSectorsAllocatedForFile(file);
 	}
 	else {
-		printf("The file \"%s\" was not found.\n", path);
+		fprintf(stderr, "The file \"%s\" was not found.\n", path);
 	}
 }
 
 void mkdir(char *command) {
-	char *path = extractSingleArgumentFrom(command);
+	char *path = extractSingleArgumentFrom(copyString(command));
 	if (!findDirectoryByPath(path)) {
 		char *parentPath = getParentPath(path);
 		char *directoryName = getLastNameFromPath(path);
 		struct directoryNode *parentDirectory = findDirectoryByPath(parentPath);
 		if (!parentDirectory) {
-			printf("Parent directory \"%s\" not found.\n", parentPath);
+			fprintf(stderr, "Parent directory \"%s\" not found.\n", parentPath);
 		}
 		else {
 			createDirectory(parentDirectory, directoryName);
 		}
 	}
 	else {
-		printf("The directory \"%s\" already exists.\n", path);
+		fprintf(stderr, "The directory \"%s\" already exists.\n", path);
 	}
 }
 
@@ -354,17 +406,19 @@ void rmdir(char *command) {
 	struct directoryNode *directory = findDirectoryByPath(path);
 	if (directory) {
 		if (directory == root) {
-			printf("The root directory cannot be removed.\n");
+			fprintf(stderr, "The root directory cannot be removed.\n");
 		}
 		else if (!isDirectoryEmpty(directory)) {
-			printf("The directory \"%s\" is not empty. It cannot be removed.\n", path);
+			fprintf(stderr, "The directory \"%s\" is not empty. It cannot be removed.\n", path);
 		}
 		else {
 			removeDirectory(directory);
+			directory->sector->status = EMPTY;
+			directory->sector->dir = NULL;
 		}
 	}
 	else {
-		printf("The directory \"%s\" not exists.\n", path);
+		fprintf(stderr, "The directory \"%s\" not exists.\n", path);
 	}
 }
 
@@ -375,7 +429,7 @@ void ls(char *command) {
 		printDirectory(directory);
 	}
 	else {
-		printf("The directory \"%s\" not exists.\n", path);
+		fprintf(stderr, "The directory \"%s\" not exists.\n", path);
 	}
 }
 
@@ -401,8 +455,41 @@ void tree() {
 	printf("\n");
 }
 
+void showSectors() {
+	int i;
+	printf("\n# Sectors map:\n"
+			"░ = Empty sector\n"
+			"▓ = Full sector\n\n");
+	for (i = 0; i < SECTOR_COUNT; i++) {
+		printf("%s", sectors[i].status == FULL ? "▓" : "░");
+	}
+	printf("\n");
+}
+
+void showFileSectors(char *command) {
+	int i;
+	char *path = extractSingleArgumentFrom(copyString(command));
+	struct fileNode *file = findFileByPath(path);
+	if (file) {
+		printf("\n# Sectors map:\n"
+				"░ = Sector\n"
+				"▓ = Sector used to file\n\n");
+		for (i = 0; i < SECTOR_COUNT; i++) {
+			printf("%s", sectors[i].file == file ? "▓" : "░");
+		}
+		printf("\n");
+	}
+	else {
+		fprintf(stderr, "The file \"%s\" was not found.\n", path);
+	}
+}
+
 int isCommand(char *command, char *expectedCommand) {
 	return !strncmp(command, expectedCommand, strlen(expectedCommand));
+}
+
+void availableSpace() {
+	printf("Disk available space = %d bytes\n", getAvailableSpace());
 }
 
 void readCommand(char *command){
@@ -413,6 +500,9 @@ void readCommand(char *command){
 	else {
 		if (isCommand(command, "exit") || isCommand(command, "quit")) {
 			exit(EXIT_SUCCESS);		
+		}
+		else if (isCommand(command, "availableSpace")) {
+			availableSpace();
 		}
 		else if (isCommand(command, "mkdir")) {
 			mkdir(command);
@@ -426,8 +516,11 @@ void readCommand(char *command){
 		else if (isCommand(command, "tree")) {
 			tree();
 		}
-		else if (isCommand(command, "showmap")) {
-			showmap();
+		else if (isCommand(command, "showFileSectors")) {
+			showFileSectors(command);
+		}
+		else if (isCommand(command, "showSectors")) {
+			showSectors();
 		}
 		else if (isCommand(command, "clear")) {
 			system("clear");
